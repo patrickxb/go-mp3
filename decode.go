@@ -17,6 +17,7 @@ package mp3
 import (
 	"errors"
 	"io"
+	"sync"
 
 	"github.com/hajimehoshi/go-mp3/internal/consts"
 	"github.com/hajimehoshi/go-mp3/internal/frame"
@@ -35,6 +36,7 @@ type Decoder struct {
 	frame         *frame.Frame
 	pos           int64
 	bytesPerFrame int64
+	sync.Mutex
 }
 
 func (d *Decoder) readFrame() error {
@@ -63,7 +65,9 @@ func (d *Decoder) Read(buf []byte) (int, error) {
 	}
 	n := copy(buf, d.buf)
 	d.buf = d.buf[n:]
+	d.Lock()
 	d.pos += int64(n)
+	d.Unlock()
 	return n, nil
 }
 
@@ -75,6 +79,8 @@ func (d *Decoder) Read(buf []byte) (int, error) {
 // channels, 2 bytes each). Be careful to seek to an offset that is divisible by
 // 4 if you want to read at full sample boundaries.
 func (d *Decoder) Seek(offset int64, whence int) (int64, error) {
+	d.Lock()
+	defer d.Unlock()
 	if offset == 0 && whence == io.SeekCurrent {
 		// Handle the special case of asking for the current position specially.
 		return d.pos, nil
@@ -194,6 +200,13 @@ const invalidLength = -1
 // e.g. when the given source is not io.Seeker.
 func (d *Decoder) Length() int64 {
 	return d.length
+}
+
+// Pos returns the read position.
+func (d *Decoder) Pos() int64 {
+	d.Lock()
+	defer d.Unlock()
+	return d.pos
 }
 
 // NewDecoder decodes the given io.Reader and returns a decoded stream.
